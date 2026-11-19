@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ghostwatch"
+version = "0.1.0"
+description = "Find text that people can't see but AI can: hidden prompt injection in documents, web pages and GitHub issues"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "VIEH Security Team" }]
+requires-python = ">=3.9"
+dependencies = []
+keywords = ["security", "prompt-injection", "ai-security", "llm", "pdf", "docx", "hidden-text", "github-actions"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Security",
+    "Environment :: Console",
+]
+
+[project.scripts]
+ghostwatch = "ghostwatch.cli:main"
+
+[tool.setuptools]
+packages = ["ghostwatch", "ghostwatch.formats"]

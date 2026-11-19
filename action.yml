@@ -1,0 +1,67 @@
+name: ghostwatch
+description: "Find hidden instructions for AI in issues, PRs, comments and documents, before an AI agent reads them"
+author: VIEH Security Team
+branding:
+  icon: eye
+  color: purple
+
+inputs:
+  scan-event:
+    description: "Scan the issue, pull request or comment that triggered the workflow"
+    default: "true"
+  event-file:
+    description: "Event JSON to scan instead of the triggering event (mostly for testing)"
+    default: ""
+  paths:
+    description: "Files or folders to scan, separated by spaces (for example: docs uploads)"
+    default: ""
+  agents:
+    description: "Audit this repository's AI agent workflows"
+    default: "true"
+  fail-on:
+    description: "Fail at this severity or above: high, medium, low or never"
+    default: high
+  comment:
+    description: "Also post the summary as a comment (needs issues or pull-requests write permission)"
+    default: "false"
+  token:
+    description: "Token used to post the comment"
+    default: ${{ github.token }}
+
+runs:
+  using: composite
+  steps:
+    - name: Look for hidden instructions
+      shell: bash
+      env:
+        GW_SCAN_EVENT: ${{ inputs.scan-event }}
+        GW_EVENT_FILE: ${{ inputs.event-file }}
+        GW_PATHS: ${{ inputs.paths }}
+        GW_AGENTS: ${{ inputs.agents }}
+        GW_FAIL_ON: ${{ inputs.fail-on }}
+        GW_COMMENT: ${{ inputs.comment }}
+        GW_NUMBER: ${{ github.event.issue.number || github.event.pull_request.number || github.event.discussion.number }}
+        GH_TOKEN: ${{ inputs.token }}
+        PYTHONPATH: ${{ github.action_path }}
+      run: |
+        # No dependencies: run straight from the action checkout.
+        summary="$RUNNER_TEMP/ghostwatch.md"
+        : > "$summary"
+        status=0
+        event="${GW_EVENT_FILE:-$GITHUB_EVENT_PATH}"
+        if [ "$GW_SCAN_EVENT" = "true" ] && [ -n "$event" ] && grep -qE '"(issue|pull_request|comment|discussion|review)"' "$event"; then
+          python3 -m ghostwatch event --file "$event" --format github --summary "$summary" --fail-on "$GW_FAIL_ON" || status=$?
+        fi
+        if [ -n "$GW_PATHS" ]; then
+          read -ra paths <<< "$GW_PATHS"
+          python3 -m ghostwatch scan "${paths[@]}" --no-agents --format github --summary "$summary" --fail-on "$GW_FAIL_ON" || status=$?
+        fi
+        if [ "$GW_AGENTS" = "true" ]; then
+          python3 -m ghostwatch agents . --format github --summary "$summary" --fail-on "$GW_FAIL_ON" || status=$?
+        fi
+        cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$GW_COMMENT" = "true" ] && [ -n "$GW_NUMBER" ] && grep -q "🔴\|🟠" "$summary"; then
+          gh api "repos/$GITHUB_REPOSITORY/issues/$GW_NUMBER/comments" -F "body=@$summary" >/dev/null \
+            || echo "ghostwatch: couldn't post a comment (the token may be read-only)" >&2
+        fi
+        exit $status
