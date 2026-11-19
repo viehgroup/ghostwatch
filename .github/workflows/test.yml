@@ -1,0 +1,59 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    # 24.04 still ships Python 3.9; ubuntu-latest (26.04) does not
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s . -p "test_*.py" -v
+
+  action:
+    # Run the action itself: it must block a malicious issue and pass a clean one
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - run: |
+          python3 examples/make_demo.py demo
+          echo '{"issue": {"number": 7, "title": "Fix typo", "body": "Typo in the README."}}' > clean-event.json
+      - name: Malicious issue (should fail)
+        id: bad
+        continue-on-error: true
+        uses: ./
+        with:
+          event-file: demo/issue-event.json
+          agents: "false"
+      - name: Clean issue (should pass)
+        uses: ./
+        with:
+          event-file: clean-event.json
+          agents: "false"
+      - name: Demo documents (should fail)
+        id: docs
+        continue-on-error: true
+        uses: ./
+        with:
+          scan-event: "false"
+          paths: demo
+          agents: "false"
+      - name: Check outcomes
+        env:
+          BAD: ${{ steps.bad.outcome }}
+          DOCS: ${{ steps.docs.outcome }}
+        run: |
+          echo "malicious issue: $BAD, demo documents: $DOCS"
+          test "$BAD" = failure && test "$DOCS" = failure
